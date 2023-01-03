@@ -1,0 +1,11 @@
+X	conditions
+N1_fpkm	normal
+N2_fpkm	normal
+N3_fpkm	normal
+CO2_fpkm	colitis
+CO4_fpkm	colitis
+CO5_fpkm	colitis
+CA1_fpkm	cancer
+CA2_fpkm	cancer
+CA3_fpkm	cancer
+CA4_fpkm	cancer
