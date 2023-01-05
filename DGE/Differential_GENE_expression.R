@@ -152,3 +152,22 @@ ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
   labs(x="Pathway", y="Normalized Enrichment Score",
        title="Hallmark pathways NES from GSEA") + 
   theme_minimal()
+
+
+#####trying_out_in_different_pathways####
+
+#kegg
+kegg = fgsea(pathways=gmtPathways("c2.cp.kegg.v6.2.symbols.gmt"), ranks) %>% 
+  as_tibble() %>% 
+  arrange(padj)
+
+#go
+go = fgsea(pathways=gmtPathways("c5.all.v6.2.symbols.gm"), ranks) %>%
+  as_tibble()%>%
+  arrange(padj)
+
+#miR
+
+miR = fgsea(pathways=gmtPathways("c3.mir.v6.2.symbols.gmt"), ranks) %>%
+  as_tibble()%>%
+  arrange(padj)
