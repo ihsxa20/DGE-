@@ -4,4 +4,4 @@ doing DGE using DeSEQ2 and plotting the results(MAplot, pheatmap, pca) and gene 
 
 
 below is the link for viewing the analysis  
-https://ihsxa20.github.io/DGE-/index.htm
+https://ihsxa20.github.io/DGE-/index.html
