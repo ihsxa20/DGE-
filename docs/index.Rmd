@@ -1,0 +1,229 @@
+---
+title: "Analysis of Paired End Rna Seq data  "
+author: "Aashi Sharma"
+date: '2023-01-06'
+output :html_document:code_folding: "hide"  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#set working directory
+
+```{r,message=FALSE,warning=FALSE}
+setwd("C:/Users/Aashi/Desktop/DGE")
+```
+
+##loading library
+
+```{r,message=FALSE,warning=FALSE}
+# load the libraries    
+library(DESeq2)
+library(apeglm)
+library(ggplot2)
+library(pheatmap)
+library(cowplot)
+library(hrbrthemes)
+library(viridis)
+library(plotly)
+library(dplyr)
+library(tidyverse)
+library(org.Hs.eg.db)
+library(fgsea)
+library("msigdbr")
+```
+
+###DGE
+
+```{r,message=FALSE,warning=FALSE}
+# DGE
+##loading count matrix
+gse = read.csv("GSE92945_Fibroblast_RNAseq_counts_1.csv", header = TRUE, row.names = 1)
+info = read.table("ind.txt", header = T,sep ='\t') 
+
+##creating a data matrix  
+dds = DESeqDataSetFromMatrix(round(gse), info, ~conditions)
+
+##removing lowly expressed genes
+keep = rowSums(counts(dds)) >= 10
+dds = dds[keep,]
+
+##main deseq
+ddsDE = DESeq(dds)
+
+##export normalized read counts
+normCOunts = counts(ddsDE, normalized = T)
+write.csv(normCOunts,"normalised_data.csv")
+
+##DESEQ results
+res = results(ddsDE, alpha = 0.05)
+
+##output DESeq result
+resOrdered = res[order(res$padj),]
+write.csv(resOrdered, "resOrdered1.csv")
+
+
+  
+```
+
+#plotting
+
+```{r}
+# loading and preparing data for plotting 
+##pca and disp(plots)
+vsat = vst(ddsDE, blind = FALSE)
+
+pca = plotPCA(vsat, intgroup = "conditions")
+disp = plotDispEsts(ddsDE)
+
+ggplotly(pca)
+
+
+##load_the_deseq2_results_data_and_metadata  
+
+normCOunt = read.csv('normalised_data.csv', row.names = 1)
+
+deSeqRes = read.csv('resOrdered.csv',row.names = 1)
+
+deSeqRes$sig =ifelse(deSeqRes$padj <= 0.05, 'yes', 'no')
+
+deSeqRes = na.omit(deSeqRes)
+```
+
+##ggplots
+
+```{r,message=FALSE}
+# ggplots
+##ma_plot 
+maplot = ggplot(deSeqRes, aes(x = log10(baseMean), y = log2FoldChange, color = sig)) + geom_point(alpha = 0.7)+scale_size(range = c(1.4, 19), name = "MA PLOT")+ scale_color_viridis(discrete = TRUE, guide=FALSE)+theme_ipsum()+theme(legend.position = "none")
+  
+ 
+
+##volcano plot 
+volcano = ggplot(deSeqRes, aes(x = log2FoldChange, y = -log10(padj), color = sig)) + geom_point(alpha = 0.7)+scale_size(range = c(1.9, 20), name = "MA PLOT")+ scale_color_viridis(discrete = TRUE, guide=FALSE)+theme_ipsum()+theme(legend.position = "none")
+volcano = volcano + ylim(0,15)
+
+
+
+##pheatmap
+signi = subset(deSeqRes, padj <= 0.05)
+allsig= merge(normCOunt, signi, by = 0)
+
+sigcounts = allsig[,2:11]
+row.names(sigcounts) = allsig$Row.names 
+```
+```{r,warning=FALSE}
+pheat = pheatmap(log2(sigcounts + 1), scale = 'row', show_rownames = F, treeheight_row = 0, treeheight_col = 0)
+
+###cowplot
+plot_grid(volcano,pheat[[4]])
+plot_grid(maplot,volcano)
+###interactive plot using ggplotly 
+ggplotly(maplot, tooltip = "text")
+ggplotly(volcano)
+
+```
+
+
+```
+
+#GSEA
+
+```{r,message=FALSE }
+# GSEA
+ 
+rest <- read_csv("resOrdered1.csv")
+head(rest)
+rest = rest %>%
+  rename(gene = ...1 )
+##creating a mapping table
+library(org.Hs.eg.db)
+ens2symbol = AnnotationDbi::select(org.Hs.eg.db,keys = rest$gene, 
+                                   columns="SYMBOL",
+                                   keytype="ENSEMBL")
+ens2symbol <- as_tibble(ens2symbol)
+view(ens2symbol)
+
+rest <- inner_join(rest, ens2symbol, by=c("gene"="ENSEMBL"))
+rest
+
+res2 <- rest %>% 
+  dplyr::select(SYMBOL, stat) %>% 
+  na.omit() %>% 
+  distinct() %>% 
+  group_by(SYMBOL) %>% 
+  summarize(stat=mean(stat))
+res2
+
+ranks <- deframe(res2)
+head(ranks, 20)
+
+####loading reference enrichment database 
+
+Hs.GOBP <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "BP")
+Hs.Reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:REACTOME")
+Hs.Hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+
+Hs.GOBP.Entrez <- Hs.GOBP %>% split(x = .$entrez_gene, f = .$gs_name)
+Hs.Hallmark.Entrez <- Hs.Hallmark %>% split(x = .$entrez_gene, f = .$gs_name)
+Hs.GOBP.Symbol <- Hs.GOBP %>% split(x = .$gene_symbol, f = .$gs_name)
+Hs.Hallmark.Symbol <- Hs.Hallmark %>% split(x = .$gene_symbol, f = .$gs_name)
+
+
+
+#####Now that we have everything lets run fgsea on it  
+fgseaRes.Hallmark <- fgsea::fgseaMultilevel(pathways=Hs.Hallmark.Symbol,stats = ranks, eps =0)
+```
+
+GSEA but prettier
+
+```{r}
+# Make the Results tidy
+fgseaResTidy <- fgseaRes.Hallmark %>%
+  as_tibble() %>%
+  arrange(desc(NES))
+
+fgseaResTidy %>% 
+  dplyr::select(-leadingEdge, -ES) %>% 
+  arrange(padj) %>% 
+  DT::datatable()
+
+head(fgseaResTidy,10)
+
+##plotting_the_results 
+gea_plot =  ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
+  geom_col(aes(fill=padj<0.05)) +
+  coord_flip() +
+  labs(x="Pathway", y="Normalized Enrichment Score",
+       title="Hallmark pathways NES from GSEA") + 
+  theme_minimal()
+ggplotly(gea_plot)  
+
+```
+
+#playing around with different pathways
+
+```{r,warning=FALSE}
+# trying_out_in_different_pathways
+##kegg
+kegg = fgsea(pathways=gmtPathways("c2.cp.kegg.v6.2.symbols.gmt"), ranks) %>% 
+  as_tibble() %>% 
+  arrange(padj)%>%
+  DT::datatable()
+
+##go
+go = fgsea(pathways=gmtPathways("c5.all.v6.2.symbols.gmt"), ranks) %>%
+  as_tibble()%>%
+  arrange(padj)%>%
+  DT::datatable()
+
+##miR
+
+miR = fgsea(pathways=gmtPathways("c3.mir.v6.2.symbols.gmt"), ranks) %>%
+  as_tibble()%>%
+  arrange(padj)%>%
+  DT::datatable()
+
+sessionInfo()
+```
